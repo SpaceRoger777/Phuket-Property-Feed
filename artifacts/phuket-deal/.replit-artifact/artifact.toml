@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "PhuketDeal"
+version = "1.0.0"
+id = "artifacts/phuket-deal"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24989
+
+[services.development]
+run = "pnpm --filter @workspace/phuket-deal run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/phuket-deal", "run", "build" ]
+publicDir = "artifacts/phuket-deal/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24989"
+BASE_PATH = "/"

@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
-}
+export type GetBuyerRequestsParams = {
+  phuket_zone?: string;
+  property_type?: string;
+  date_from?: string;
+  date_to?: string;
+};

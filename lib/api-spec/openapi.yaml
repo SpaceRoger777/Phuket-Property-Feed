@@ -3,13 +3,19 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: PhuketDeal Real Estate Intelligence API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: listings
+    description: Property listings
+  - name: leads
+    description: Hot leads (direct owners and buyers)
+  - name: stats
+    description: Market statistics
 paths:
   /healthz:
     get:
@@ -24,6 +30,239 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /listings:
+    get:
+      operationId: getListings
+      tags: [listings]
+      summary: Get all property listings
+      description: Returns flat joined data from fb_posts + fb_structured_data via FastAPI proxy
+      parameters:
+        - name: listing_type
+          in: query
+          schema:
+            type: string
+            enum: [for_sale, for_rent, unknown]
+        - name: property_type
+          in: query
+          schema:
+            type: string
+        - name: district
+          in: query
+          schema:
+            type: string
+        - name: phuket_zone
+          in: query
+          schema:
+            type: string
+            enum: [north, central, south, east]
+        - name: poster_type
+          in: query
+          schema:
+            type: string
+            enum: [owner, agent, unknown]
+        - name: opportunity_score
+          in: query
+          schema:
+            type: string
+            enum: [high, medium, low]
+        - name: is_direct_owner
+          in: query
+          schema:
+            type: boolean
+        - name: has_pool
+          in: query
+          schema:
+            type: boolean
+        - name: min_price
+          in: query
+          schema:
+            type: number
+        - name: max_price
+          in: query
+          schema:
+            type: number
+        - name: min_bedrooms
+          in: query
+          schema:
+            type: integer
+        - name: max_bedrooms
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 200
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: List of property listings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Listing"
+
+  /leads/direct-owners:
+    get:
+      operationId: getDirectOwners
+      tags: [leads]
+      summary: Get direct owner listings
+      description: Returns listings where is_direct_owner=true or classification_label is owner_confirmed/owner_suspected
+      parameters:
+        - name: phuket_zone
+          in: query
+          schema:
+            type: string
+        - name: property_type
+          in: query
+          schema:
+            type: string
+        - name: min_price
+          in: query
+          schema:
+            type: number
+        - name: max_price
+          in: query
+          schema:
+            type: number
+        - name: has_pool
+          in: query
+          schema:
+            type: boolean
+        - name: date_from
+          in: query
+          schema:
+            type: string
+        - name: date_to
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of direct owner listings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Listing"
+
+  /leads/buyers:
+    get:
+      operationId: getBuyerRequests
+      tags: [leads]
+      summary: Get buyer and renter request posts
+      description: Returns posts where listing_type=unknown or text contains buying/renting intent
+      parameters:
+        - name: phuket_zone
+          in: query
+          schema:
+            type: string
+        - name: property_type
+          in: query
+          schema:
+            type: string
+        - name: date_from
+          in: query
+          schema:
+            type: string
+        - name: date_to
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of buyer/renter requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Listing"
+
+  /stats/overview:
+    get:
+      operationId: getStatsOverview
+      tags: [stats]
+      summary: Get market overview statistics
+      description: Returns KPI counts and percentages for the dashboard
+      responses:
+        "200":
+          description: Market overview stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatsOverview"
+
+  /stats/by-district:
+    get:
+      operationId: getStatsByDistrict
+      tags: [stats]
+      summary: Get listing counts by district
+      responses:
+        "200":
+          description: Listing counts per district
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DistrictStat"
+
+  /stats/by-property-type:
+    get:
+      operationId: getStatsByPropertyType
+      tags: [stats]
+      summary: Get listing counts by property type
+      responses:
+        "200":
+          description: Listing counts per property type
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PropertyTypeStat"
+
+  /stats/price-per-sqm:
+    get:
+      operationId: getStatsPricePerSqm
+      tags: [stats]
+      summary: Get price per sqm stats by district
+      description: For for_sale listings with both price_thb and size_sqm populated
+      responses:
+        "200":
+          description: Price per sqm stats by district
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PricePerSqmStat"
+
+  /stats/posts-over-time:
+    get:
+      operationId: getStatsPostsOverTime
+      tags: [stats]
+      summary: Get posts scraped per day for last 30 days
+      responses:
+        "200":
+          description: Daily post counts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DailyPostCount"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +273,231 @@ components:
       required:
         - status
 
+    Listing:
+      type: object
+      properties:
+        post_id:
+          type: string
+        post_url:
+          type: string
+          nullable: true
+        author_name:
+          type: string
+          nullable: true
+        author_profile_url:
+          type: string
+          nullable: true
+        post_text:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          nullable: true
+        comment_count:
+          type: integer
+          nullable: true
+        like_count:
+          type: integer
+          nullable: true
+        screenshot_path:
+          type: string
+          nullable: true
+        classification_label:
+          type: string
+          nullable: true
+        is_direct_owner:
+          type: boolean
+          nullable: true
+        is_agent:
+          type: boolean
+          nullable: true
+        is_hot:
+          type: boolean
+          nullable: true
+        source_mode:
+          type: string
+          nullable: true
+        listing_type:
+          type: string
+          nullable: true
+        price_thb:
+          type: number
+          nullable: true
+        price_thb_min:
+          type: number
+          nullable: true
+        price_thb_max:
+          type: number
+          nullable: true
+        price_unit:
+          type: string
+          nullable: true
+        price_negotiable:
+          type: boolean
+          nullable: true
+        property_type:
+          type: string
+          nullable: true
+        bedrooms:
+          type: integer
+          nullable: true
+        bathrooms:
+          type: integer
+          nullable: true
+        floors:
+          type: integer
+          nullable: true
+        size_sqm:
+          type: number
+          nullable: true
+        land_rai:
+          type: number
+          nullable: true
+        location:
+          type: string
+          nullable: true
+        district:
+          type: string
+          nullable: true
+        phuket_zone:
+          type: string
+          nullable: true
+        project_name:
+          type: string
+          nullable: true
+        condition:
+          type: string
+          nullable: true
+        furnished:
+          type: string
+          nullable: true
+        has_pool:
+          type: boolean
+          nullable: true
+        has_sea_view:
+          type: boolean
+          nullable: true
+        has_garden:
+          type: boolean
+          nullable: true
+        has_parking:
+          type: boolean
+          nullable: true
+        has_gym:
+          type: boolean
+          nullable: true
+        has_security:
+          type: boolean
+          nullable: true
+        has_mountain_view:
+          type: boolean
+          nullable: true
+        poster_type:
+          type: string
+          nullable: true
+        urgency_signals:
+          type: array
+          nullable: true
+          items:
+            type: string
+        key_features:
+          type: array
+          nullable: true
+          items:
+            type: string
+        decision_summary:
+          type: string
+          nullable: true
+        opportunity_score:
+          type: string
+          nullable: true
+        confidence:
+          type: string
+          nullable: true
+      required:
+        - post_id
+
+    StatsOverview:
+      type: object
+      properties:
+        total_posts_this_week:
+          type: integer
+        total_posts_all_time:
+          type: integer
+        direct_owner_count:
+          type: integer
+        direct_owner_pct:
+          type: number
+        for_sale_count:
+          type: integer
+        for_rent_count:
+          type: integer
+        high_opportunity_count:
+          type: integer
+        avg_price_thb:
+          type: number
+          nullable: true
+      required:
+        - total_posts_this_week
+        - total_posts_all_time
+        - direct_owner_count
+        - direct_owner_pct
+        - for_sale_count
+        - for_rent_count
+        - high_opportunity_count
+
+    DistrictStat:
+      type: object
+      properties:
+        district:
+          type: string
+        count:
+          type: integer
+      required:
+        - district
+        - count
+
+    PropertyTypeStat:
+      type: object
+      properties:
+        property_type:
+          type: string
+        count:
+          type: integer
+      required:
+        - property_type
+        - count
+
+    PricePerSqmStat:
+      type: object
+      properties:
+        district:
+          type: string
+        avg_price_per_sqm:
+          type: number
+          nullable: true
+        median_price_per_sqm:
+          type: number
+          nullable: true
+        min_price_per_sqm:
+          type: number
+          nullable: true
+        max_price_per_sqm:
+          type: number
+          nullable: true
+        count:
+          type: integer
+      required:
+        - district
+        - count
+
+    DailyPostCount:
+      type: object
+      properties:
+        date:
+          type: string
+        count:
+          type: integer
+      required:
+        - date
+        - count
