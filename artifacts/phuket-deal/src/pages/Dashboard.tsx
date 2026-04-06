@@ -6,27 +6,39 @@ import { Activity, ListFilter, TrendingUp, Radar, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useGetStatsOverview } from "@workspace/api-client-react";
 
-function BackendStatus() {
-  const [online, setOnline] = useState<boolean | null>(null);
+type HealthData = {
+  status: string;
+  backend_connected: boolean;
+  fastapi_url: string;
+  fastapi_detail: string | null;
+};
 
-  // Ping the health endpoint every 30 seconds
+function BackendStatus() {
+  const [health, setHealth] = useState<HealthData | null>(null);
+
+  // Ping the health endpoint every 20 seconds — now reports real FastAPI connectivity
   useEffect(() => {
     const check = async () => {
       try {
-        const res = await fetch("/api/healthz", { signal: AbortSignal.timeout(4000) });
-        setOnline(res.ok);
+        const res = await fetch("/api/healthz", { signal: AbortSignal.timeout(6000) });
+        if (res.ok) {
+          const data = await res.json() as HealthData;
+          setHealth(data);
+        } else {
+          setHealth({ status: "error", backend_connected: false, fastapi_url: "", fastapi_detail: null });
+        }
       } catch {
-        setOnline(false);
+        setHealth({ status: "error", backend_connected: false, fastapi_url: "", fastapi_detail: null });
       }
     };
     check();
-    const id = setInterval(check, 30000);
+    const id = setInterval(check, 20000);
     return () => clearInterval(id);
   }, []);
 
   const { data: overview } = useGetStatsOverview();
 
-  if (online === null) {
+  if (health === null) {
     return (
       <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground border border-border px-2 py-1 rounded bg-card/50">
         <span className="w-2 h-2 rounded-full bg-muted-foreground animate-pulse" />
@@ -35,11 +47,11 @@ function BackendStatus() {
     );
   }
 
-  if (!online) {
+  if (!health.backend_connected) {
     return (
-      <div className="flex items-center gap-2 text-xs font-mono text-red-400 border border-red-500/30 px-2 py-1 rounded bg-red-500/10">
+      <div className="flex items-center gap-2 text-xs font-mono text-red-400 border border-red-500/30 px-2 py-1 rounded bg-red-500/10" title="Restart ngrok and update FASTAPI_URL in Replit Secrets">
         <WifiOff className="w-3.5 h-3.5" />
-        BACKEND OFFLINE
+        BACKEND OFFLINE — restart ngrok &amp; update FASTAPI_URL
       </div>
     );
   }
@@ -52,10 +64,10 @@ function BackendStatus() {
       {totalPosts > 0 && (
         <div className="hidden sm:flex items-center gap-3 text-xs font-mono text-muted-foreground">
           <span className="border border-border/50 px-2 py-1 rounded bg-card/50">
-            <span className="text-foreground font-bold">{totalPosts}</span> posts
+            <span className="text-foreground font-bold">{totalPosts.toLocaleString()}</span> posts
           </span>
           <span className="border border-border/50 px-2 py-1 rounded bg-card/50">
-            <span className="text-primary font-bold">{postsThisWeek}</span> this week
+            <span className="text-primary font-bold">{postsThisWeek.toLocaleString()}</span> this week
           </span>
         </div>
       )}
