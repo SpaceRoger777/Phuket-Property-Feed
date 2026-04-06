@@ -2,7 +2,70 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HotLeads } from "@/components/HotLeads";
 import { ListingsBrowser } from "@/components/ListingsBrowser";
 import { MarketIntelligence } from "@/components/MarketIntelligence";
-import { Activity, ListFilter, TrendingUp, Radar } from "lucide-react";
+import { Activity, ListFilter, TrendingUp, Radar, WifiOff } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useGetStatsOverview } from "@workspace/api-client-react";
+
+function BackendStatus() {
+  const [online, setOnline] = useState<boolean | null>(null);
+
+  // Ping the health endpoint every 30 seconds
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await fetch("/api/healthz", { signal: AbortSignal.timeout(4000) });
+        setOnline(res.ok);
+      } catch {
+        setOnline(false);
+      }
+    };
+    check();
+    const id = setInterval(check, 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  const { data: overview } = useGetStatsOverview();
+
+  if (online === null) {
+    return (
+      <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground border border-border px-2 py-1 rounded bg-card/50">
+        <span className="w-2 h-2 rounded-full bg-muted-foreground animate-pulse" />
+        CONNECTING…
+      </div>
+    );
+  }
+
+  if (!online) {
+    return (
+      <div className="flex items-center gap-2 text-xs font-mono text-red-400 border border-red-500/30 px-2 py-1 rounded bg-red-500/10">
+        <WifiOff className="w-3.5 h-3.5" />
+        BACKEND OFFLINE
+      </div>
+    );
+  }
+
+  const totalPosts = overview?.total_posts_all_time ?? 0;
+  const postsThisWeek = overview?.total_posts_this_week ?? 0;
+
+  return (
+    <div className="flex items-center gap-3">
+      {totalPosts > 0 && (
+        <div className="hidden sm:flex items-center gap-3 text-xs font-mono text-muted-foreground">
+          <span className="border border-border/50 px-2 py-1 rounded bg-card/50">
+            <span className="text-foreground font-bold">{totalPosts}</span> posts
+          </span>
+          <span className="border border-border/50 px-2 py-1 rounded bg-card/50">
+            <span className="text-primary font-bold">{postsThisWeek}</span> this week
+          </span>
+        </div>
+      )}
+      <div className="flex items-center gap-2 text-xs font-mono text-green-400 border border-green-500/30 px-2 py-1 rounded bg-green-500/10">
+        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+        LIVE
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   return (
@@ -19,12 +82,7 @@ export default function Dashboard() {
               <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">Intelligence</span>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground border border-border px-2 py-1 rounded bg-card/50">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              SYSTEM ONLINE
-            </div>
-          </div>
+          <BackendStatus />
         </div>
       </header>
 

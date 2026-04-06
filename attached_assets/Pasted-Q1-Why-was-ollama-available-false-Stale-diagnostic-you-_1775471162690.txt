@@ -1,0 +1,34 @@
+Q1: Why was ollama_available: false?
+Stale diagnostic — you were hitting Docker on IPv6:8000 instead of the Python server on IPv4:8000. Current status: extracted: 301/375, ollama_available: true.
+
+Q2: /api/posts → items field list (complete)
+
+post_id, group_url, post_url, author_name, author_profile_url, author_key,
+post_text, normalized_post_text, created_at, scraped_at,
+comment_count, like_count, is_hot, is_direct_owner, is_agent,
+source_mode, screenshot_path, classifier_version,
+classification_label, classification_confidence, classification_reasons_json,
+needs_review, review_status, listing_source, listing_id,
+ai_label, ai_confidence, ai_reasoning, ai_model, analyzed_at,
+listing_type, price_thb, bedrooms, bathrooms, size_sqm,
+property_type, location, district, furnished, has_pool,
+manual_override_label, labels
+
+All fields your proxy needs are present: author_profile_url ✓, post_url ✓, created_at ✓, classification_label ✓, is_direct_owner ✓, screenshot_path ✓.
+
+Q3: listing_type for unclassified posts?
+NULL or empty string in fb_post_structured_data. Fixed: ?listing_type=unknown now matches NULL/empty/'unknown' — returns 74 posts (the ones not yet extracted).
+
+Q4: /feed/direct-owner with LEFT JOIN (works without Ollama)
+Fixed — now uses LEFT JOIN fb_authors instead of the nonexistent fb_post_author_stats. Returns items immediately.
+
+Q5: filter values for /api/posts
+Valid filter= values: all, inbox, owner_confirmed, owner_suspected, agent_confirmed, unclear, review_queue, true_owner, agent_with_owner_contact, agent_direct, unanalyzed, keep, exclude, discarded, all_raw
+
+Use filter=owner_confirmed to get all 136 classified direct owner posts. This works right now with no Ollama dependency.
+
+Q6: posts_this_week
+Added — overall.posts_this_week now returns 375 (same value as new_this_week).
+
+One remaining issue to fix on your proxy side:
+Your listing_type=unknown call for demand signals should call /api/posts?listing_type=unknown (not /structured/listings). This returns the 74 unextracted posts that are likely buyer/demand signals.
