@@ -24,3 +24,8 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[userenv]
+
+[userenv.development]
+FASTAPI_URL = "https://april-periwinkled-pseudofinally.ngrok-free.dev"
