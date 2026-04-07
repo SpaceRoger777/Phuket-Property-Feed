@@ -28,4 +28,6 @@ timeoutMs = 20000
 [userenv]
 
 [userenv.development]
+
+[userenv.shared]
 FASTAPI_URL = "https://april-periwinkled-pseudofinally.ngrok-free.dev"
