@@ -225,9 +225,11 @@ function normalizePost(item: Record<string, unknown>) {
   const beds     = (item.bedrooms  != null) ? item.bedrooms  : parseBedrooms(postText);
   const baths    = (item.bathrooms != null) ? item.bathrooms : parseBathrooms(postText);
   const sqm      = (item.size_sqm  != null) ? item.size_sqm  : parseSizeSqm(postText);
-  const zone     = (item.phuket_zone != null && item.phuket_zone !== "")
-    ? item.phuket_zone
-    : detectZone(item.district as string | null, item.location as string | null);
+  // Zone: always try district-based mapping first (authoritative) — overrides stale DB values.
+  // Old Ollama extractions had Thalang/Cherngtalay incorrectly mapped to "south".
+  const districtZone = detectZone(item.district as string | null, item.location as string | null);
+  const dbZone = (item.phuket_zone as string | null);
+  const zone = districtZone ?? (dbZone && dbZone !== "unknown" ? dbZone : null);
 
   return {
     post_id:             item.post_id,
