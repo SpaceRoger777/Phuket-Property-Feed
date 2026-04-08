@@ -5,8 +5,34 @@
  * PhuketDeal Real Estate Intelligence API
  * OpenAPI spec version: 0.1.0
  */
+
+// ---------------------------------------------------------------------------
+// NOTE: orval cannot be run in this environment (no pnpm available on this
+// machine). Schemas have been manually maintained in sync with openapi.yaml.
+// When orval is available (on Replit), run `pnpm run generate` to regenerate.
+// ---------------------------------------------------------------------------
+
 export interface HealthStatus {
   status: string;
+}
+
+export type PostLabel =
+  | "favorite"
+  | "not_interested"
+  | "contacted"
+  | "hot_lead"
+  | "to_list"
+  | "archived";
+
+export interface PostLabelRequest {
+  label: PostLabel;
+}
+
+export interface ActionResult {
+  ok: boolean;
+  post_id?: string | null;
+  label?: string | null;
+  error?: string | null;
 }
 
 export interface Listing {
@@ -16,6 +42,7 @@ export interface Listing {
   author_profile_url?: string | null;
   post_text?: string | null;
   created_at?: string | null;
+  scraped_at?: string | null;
   comment_count?: number | null;
   like_count?: number | null;
   screenshot_path?: string | null;
@@ -23,6 +50,7 @@ export interface Listing {
   is_direct_owner?: boolean | null;
   is_agent?: boolean | null;
   is_hot?: boolean | null;
+  is_discarded?: boolean | null;
   source_mode?: string | null;
   listing_type?: string | null;
   price_thb?: number | null;
@@ -55,6 +83,8 @@ export interface Listing {
   decision_summary?: string | null;
   opportunity_score?: string | null;
   confidence?: string | null;
+  /** User-applied labels (favorite, contacted, hot_lead, etc.) */
+  labels?: PostLabel[] | null;
 }
 
 export interface StatsOverview {
@@ -92,6 +122,10 @@ export interface DailyPostCount {
   count: number;
 }
 
+// ---------------------------------------------------------------------------
+// Query parameter types
+// ---------------------------------------------------------------------------
+
 export type GetListingsParams = {
   listing_type?: GetListingsListingType;
   property_type?: string;
@@ -105,6 +139,7 @@ export type GetListingsParams = {
   max_price?: number;
   min_bedrooms?: number;
   max_bedrooms?: number;
+  scraped_date?: string;
   limit?: number;
   offset?: number;
 };
@@ -152,6 +187,7 @@ export type GetDirectOwnersParams = {
   min_price?: number;
   max_price?: number;
   has_pool?: boolean;
+  scraped_date?: string;
   date_from?: string;
   date_to?: string;
 };
@@ -159,6 +195,25 @@ export type GetDirectOwnersParams = {
 export type GetBuyerRequestsParams = {
   phuket_zone?: string;
   property_type?: string;
+  scraped_date?: string;
   date_from?: string;
   date_to?: string;
+};
+
+export type AddPostLabelVariables = {
+  post_id: string;
+  body: PostLabelRequest;
+};
+
+export type RemovePostLabelVariables = {
+  post_id: string;
+  label: string;
+};
+
+export type DiscardPostVariables = {
+  post_id: string;
+};
+
+export type RestorePostVariables = {
+  post_id: string;
 };

@@ -95,6 +95,11 @@ paths:
           schema:
             type: integer
             default: 200
+        - name: scraped_date
+          in: query
+          schema:
+            type: string
+            description: "Filter by scrape date (YYYY-MM-DD). Defaults to all dates."
         - name: offset
           in: query
           schema:
@@ -109,6 +114,109 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Listing"
+
+  /scrape-dates:
+    get:
+      operationId: getScrapeDates
+      tags: [listings]
+      summary: Get available scrape dates
+      description: Returns list of dates (YYYY-MM-DD) for which scraped posts exist, most recent first
+      responses:
+        "200":
+          description: List of scrape dates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /posts/{post_id}/label:
+    post:
+      operationId: addPostLabel
+      tags: [listings]
+      summary: Add a label to a post
+      parameters:
+        - name: post_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostLabelRequest"
+      responses:
+        "200":
+          description: Label applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionResult"
+
+  /posts/{post_id}/label/{label}:
+    delete:
+      operationId: removePostLabel
+      tags: [listings]
+      summary: Remove a label from a post
+      parameters:
+        - name: post_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: label
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Label removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionResult"
+
+  /posts/{post_id}/discard:
+    post:
+      operationId: discardPost
+      tags: [listings]
+      summary: Discard a post (hide from feeds)
+      parameters:
+        - name: post_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Post discarded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionResult"
+
+  /posts/{post_id}/restore:
+    post:
+      operationId: restorePost
+      tags: [listings]
+      summary: Restore a discarded post
+      parameters:
+        - name: post_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Post restored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionResult"
 
   /leads/direct-owners:
     get:
@@ -137,6 +245,10 @@ paths:
           in: query
           schema:
             type: boolean
+        - name: scraped_date
+          in: query
+          schema:
+            type: string
         - name: date_from
           in: query
           schema:
@@ -167,6 +279,10 @@ paths:
           schema:
             type: string
         - name: property_type
+          in: query
+          schema:
+            type: string
+        - name: scraped_date
           in: query
           schema:
             type: string
@@ -501,3 +617,29 @@ components:
       required:
         - date
         - count
+
+    PostLabelRequest:
+      type: object
+      properties:
+        label:
+          type: string
+          enum: [favorite, not_interested, contacted, hot_lead, to_list, archived]
+      required:
+        - label
+
+    ActionResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        post_id:
+          type: string
+          nullable: true
+        label:
+          type: string
+          nullable: true
+        error:
+          type: string
+          nullable: true
+      required:
+        - ok

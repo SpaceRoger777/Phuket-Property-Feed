@@ -5,24 +5,33 @@
  * PhuketDeal Real Estate Intelligence API
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
 import type {
+  ActionResult,
+  AddPostLabelVariables,
   DailyPostCount,
+  DiscardPostVariables,
   DistrictStat,
   GetBuyerRequestsParams,
   GetDirectOwnersParams,
   GetListingsParams,
   HealthStatus,
   Listing,
+  PostLabelRequest,
   PricePerSqmStat,
   PropertyTypeStat,
+  RemovePostLabelVariables,
+  RestorePostVariables,
   StatsOverview,
 } from "./api.schemas";
 
@@ -775,4 +784,175 @@ export function useGetStatsPostsOverTime<
   };
 
   return { ...query, queryKey: queryOptions.queryKey };
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/scrape-dates — available scrape dates (most recent first)
+// ---------------------------------------------------------------------------
+
+export const getGetScrapeDatesUrl = () => `/api/scrape-dates`;
+
+export const getScrapeDates = async (options?: RequestInit): Promise<string[]> =>
+  customFetch<string[]>(getGetScrapeDatesUrl(), { ...options, method: "GET" });
+
+export const getGetScrapeDatesQueryKey = () => [`/api/scrape-dates`] as const;
+
+export const getGetScrapeDatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getScrapeDates>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof getScrapeDates>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+  const queryKey = queryOptions?.queryKey ?? getGetScrapeDatesQueryKey();
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getScrapeDates>>> = ({ signal }) =>
+    getScrapeDates({ signal, ...requestOptions });
+  return { queryKey, queryFn, staleTime: 60_000, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getScrapeDates>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export function useGetScrapeDates<
+  TData = Awaited<ReturnType<typeof getScrapeDates>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof getScrapeDates>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetScrapeDatesQueryOptions(options);
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/posts/:id/label
+// ---------------------------------------------------------------------------
+
+export const addPostLabel = async (
+  post_id: string,
+  body: PostLabelRequest,
+  options?: RequestInit,
+): Promise<ActionResult> =>
+  customFetch<ActionResult>(`/api/posts/${post_id}/label`, {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(body),
+  });
+
+export function useAddPostLabel<TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addPostLabel>>,
+    TError,
+    AddPostLabelVariables,
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof addPostLabel>>,
+  TError,
+  AddPostLabelVariables,
+  TContext
+> {
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addPostLabel>>,
+    AddPostLabelVariables
+  > = ({ post_id, body }) => addPostLabel(post_id, body);
+  return useMutation({ mutationFn, ...options?.mutation });
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/posts/:id/label/:label
+// ---------------------------------------------------------------------------
+
+export const removePostLabel = async (
+  post_id: string,
+  label: string,
+  options?: RequestInit,
+): Promise<ActionResult> =>
+  customFetch<ActionResult>(`/api/posts/${post_id}/label/${label}`, {
+    ...options,
+    method: "DELETE",
+  });
+
+export function useRemovePostLabel<TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removePostLabel>>,
+    TError,
+    RemovePostLabelVariables,
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof removePostLabel>>,
+  TError,
+  RemovePostLabelVariables,
+  TContext
+> {
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof removePostLabel>>,
+    RemovePostLabelVariables
+  > = ({ post_id, label }) => removePostLabel(post_id, label);
+  return useMutation({ mutationFn, ...options?.mutation });
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/posts/:id/discard
+// ---------------------------------------------------------------------------
+
+export const discardPost = async (
+  post_id: string,
+  options?: RequestInit,
+): Promise<ActionResult> =>
+  customFetch<ActionResult>(`/api/posts/${post_id}/discard`, { ...options, method: "POST" });
+
+export function useDiscardPost<TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof discardPost>>,
+    TError,
+    DiscardPostVariables,
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof discardPost>>,
+  TError,
+  DiscardPostVariables,
+  TContext
+> {
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof discardPost>>,
+    DiscardPostVariables
+  > = ({ post_id }) => discardPost(post_id);
+  return useMutation({ mutationFn, ...options?.mutation });
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/posts/:id/restore
+// ---------------------------------------------------------------------------
+
+export const restorePost = async (
+  post_id: string,
+  options?: RequestInit,
+): Promise<ActionResult> =>
+  customFetch<ActionResult>(`/api/posts/${post_id}/restore`, { ...options, method: "POST" });
+
+export function useRestorePost<TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof restorePost>>,
+    TError,
+    RestorePostVariables,
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof restorePost>>,
+  TError,
+  RestorePostVariables,
+  TContext
+> {
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof restorePost>>,
+    RestorePostVariables
+  > = ({ post_id }) => restorePost(post_id);
+  return useMutation({ mutationFn, ...options?.mutation });
 }

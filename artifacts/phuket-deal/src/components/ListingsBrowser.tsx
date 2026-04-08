@@ -11,7 +11,7 @@ import { useState } from "react";
 import { ChevronDown, ExternalLink, Copy, Check } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
-export function ListingsBrowser() {
+export function ListingsBrowser({ scraped_date }: { scraped_date?: string }) {
   const [filters, setFilters] = useState({
     listing_type: "all",
     property_type: "all",
@@ -30,6 +30,7 @@ export function ListingsBrowser() {
   if (filters.poster_type !== "all") queryParams.poster_type = filters.poster_type;
   if (filters.min_price) queryParams.min_price = parseInt(filters.min_price, 10);
   if (filters.max_price) queryParams.max_price = parseInt(filters.max_price, 10);
+  if (scraped_date) queryParams.scraped_date = scraped_date;
 
   const { data: listings, isLoading } = useGetListings(queryParams, {
     query: { queryKey: getGetListingsQueryKey(queryParams) }
@@ -109,6 +110,13 @@ export function ListingsBrowser() {
           <Label className="text-xs text-muted-foreground">Max Price</Label>
           <Input className="h-8 text-sm" type="number" placeholder="Max ฿" value={filters.max_price} onChange={e => setFilters(prev => ({...prev, max_price: e.target.value}))} />
         </div>
+        {scraped_date && (
+          <div className="flex items-end pb-1">
+            <div className="text-xs text-muted-foreground/70 border border-border/50 rounded px-2.5 py-1 h-8 flex items-center">
+              Showing: <span className="ml-1 text-foreground font-medium">{scraped_date}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="border border-border rounded-lg bg-card overflow-hidden">
