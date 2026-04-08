@@ -56,31 +56,147 @@ async function mutateFastAPI(
   return res.json();
 }
 
-function parseBool(val: unknown): boolean | undefined {
-  if (val === "true" || val === true || val === "1") return true;
-  if (val === "false" || val === false || val === "0") return false;
-  return undefined;
+// ---------------------------------------------------------------------------
+// Text-parsing utilities
+// Extract structured data from raw FB post text when Ollama extraction
+// hasn't run (or failed). These are best-effort fallbacks.
+// ---------------------------------------------------------------------------
+
+/** Decode common HTML entities that the FB scraper leaves in strings. */
+function decodeHtml(text: string): string {
+  return text
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Extract the first Thai Baht price from post text.
+ * Handles: ฿45,000 | ฿4.5M | THB 45,000 | 45,000 THB | 45,000 baht
+ * Returns null if no price found or value is implausible.
+ */
+function parsePriceThb(text: string): number | null {
+  // ฿ symbol with optional M/K suffix
+  const m1 = text.match(/฿\s*([\d,]+(?:\.\d+)?)\s*(M|K|m|k)?/);
+  if (m1) {
+    let val = parseFloat(m1[1].replace(/,/g, ""));
+    const suffix = (m1[2] || "").toUpperCase();
+    if (suffix === "M") val *= 1_000_000;
+    else if (suffix === "K") val *= 1_000;
+    if (val >= 5_000 && val <= 999_000_000) return Math.round(val);
+  }
+  // "THB 45,000" or "THB45000"
+  const m2 = text.match(/\bTHB\s*([\d,]+(?:\.\d+)?)/i);
+  if (m2) {
+    const val = parseFloat(m2[1].replace(/,/g, ""));
+    if (val >= 5_000 && val <= 999_000_000) return Math.round(val);
+  }
+  // "45,000 THB" or "45,000 baht"
+  const m3 = text.match(/([\d,]+(?:\.\d+)?)\s*(?:THB|baht|บาท)\b/i);
+  if (m3) {
+    const val = parseFloat(m3[1].replace(/,/g, ""));
+    if (val >= 5_000 && val <= 999_000_000) return Math.round(val);
+  }
+  return null;
+}
+
+/** Detect for_sale / for_rent from post text. */
+function parseListingType(text: string): string | null {
+  if (/for rent|to rent|property to rent|\/month|\/mo\b|per month|monthly|long.?term rental|short.?term rental/i.test(text)) {
+    return "for_rent";
+  }
+  if (/for sale|sale price|selling price|asking price|freehold|leasehold/i.test(text)) {
+    return "for_sale";
+  }
+  return null;
+}
+
+/** Detect villa / condo / house / land from post text. */
+function parsePropertyType(text: string): string | null {
+  if (/\bvilla\b/i.test(text)) return "villa";
+  if (/\bcondo\b|\bcondominium\b|\bapartment\b|\bstudio\b/i.test(text)) return "condo";
+  if (/\bhouse\b|\btownhouse\b|\btown house\b|\bบ้าน\b/i.test(text)) return "house";
+  if (/\bland\b|\bplot\b|\brai\b|\bที่ดิน\b/i.test(text)) return "land";
+  return null;
+}
+
+/** Parse bedroom count from post text: "4 Beds", "4 BR", "4-bedroom", "4 ห้องนอน" */
+function parseBedrooms(text: string): number | null {
+  const m = text.match(/(\d+)\s*(?:bed(?:room)?s?|BR\b|ห้องนอน)/i);
+  if (m) {
+    const val = parseInt(m[1], 10);
+    if (val >= 0 && val <= 20) return val;
+  }
+  return null;
+}
+
+/** Parse bathroom count from post text. */
+function parseBathrooms(text: string): number | null {
+  const m = text.match(/(\d+)\s*(?:bath(?:room)?s?|ห้องน้ำ)/i);
+  if (m) {
+    const val = parseInt(m[1], 10);
+    if (val >= 0 && val <= 20) return val;
+  }
+  return null;
+}
+
+/** Parse size in sqm: "120 sqm", "120 sq.m", "120 ตร.ม" */
+function parseSizeSqm(text: string): number | null {
+  const m = text.match(/([\d,]+(?:\.\d+)?)\s*(?:sq\.?m(?:eters?)?|ตร\.?ม)/i);
+  if (m) {
+    const val = parseFloat(m[1].replace(/,/g, ""));
+    if (val >= 10 && val <= 100_000) return Math.round(val);
+  }
+  return null;
+}
+
+/**
+ * Rough Phuket zone detection from district / location text.
+ * Fallback only — Ollama extraction is more accurate.
+ */
+function detectZone(district: string | null, location: string | null): string | null {
+  const text = `${district ?? ""} ${location ?? ""}`.toLowerCase();
+  if (!text.trim()) return null;
+  if (/rawai|nai harn|kata\b|karon|chalong|ao sane|cape panwa/i.test(text)) return "south";
+  if (/patong|kamala|kalim/i.test(text)) return "central";
+  if (/bang.?tao|bangtao|laguna|cherng.?talay|surin|layan|mai khao|thalang/i.test(text)) return "north";
+  if (/phuket city|phuket town|ao por|pa klok|cape yamu|east/i.test(text)) return "east";
+  return null;
 }
 
 // ---------------------------------------------------------------------------
 // normalizePost
-// Maps a raw /api/posts item (which LEFT-JOINs fb_post_structured_data) into
-// the Listing shape the frontend cards expect.
-//
-// Fields present from the DB LEFT JOIN (always available):
-//   listing_type, price_thb, bedrooms, bathrooms, size_sqm, property_type,
-//   location, district, furnished, has_pool
-//
-// Fields NOT in /api/posts SELECT (require Ollama extraction — will be null):
-//   phuket_zone, has_sea_view, has_mountain_view, has_gym, has_security,
-//   has_parking, has_garden, opportunity_score, decision_summary, urgency_signals
+// Maps a raw /api/posts item into the Listing shape the frontend expects.
+// Uses text-parsing fallbacks so that cards show useful data even when
+// Ollama structured extraction hasn't run yet.
 // ---------------------------------------------------------------------------
 function normalizePost(item: Record<string, unknown>) {
-  // Build a short decision_summary from post_text when no AI summary exists.
-  const postText = String(item.post_text ?? "").trim();
-  const decisionSummary = postText
-    ? postText.replace(/\s+/g, " ").slice(0, 220) + (postText.length > 220 ? "…" : "")
+  // Decode HTML entities in post text and author name
+  const postText = decodeHtml(String(item.post_text ?? "").trim());
+  const authorName = item.author_name
+    ? decodeHtml(String(item.author_name))
     : null;
+
+  // Real Ollama decision_summary (from sd.decision_summary in _POST_SELECT).
+  // Empty string means not extracted — treat as null.
+  const realSummary =
+    typeof item.decision_summary === "string" && item.decision_summary.trim()
+      ? item.decision_summary.trim()
+      : null;
+
+  // Ollama key_features (JSON array string from DB)
+  let keyFeatures: string[] = [];
+  const rawFeatures = item.key_features;
+  if (Array.isArray(rawFeatures)) {
+    keyFeatures = rawFeatures as string[];
+  } else if (typeof rawFeatures === "string" && rawFeatures.startsWith("[")) {
+    try { keyFeatures = JSON.parse(rawFeatures); } catch { keyFeatures = []; }
+  }
 
   // urgency_signals: parse from JSON string if needed.
   let urgencySignals: string[] = [];
@@ -95,66 +211,75 @@ function normalizePost(item: Record<string, unknown>) {
   const labelsCsv = String(item.labels_csv ?? "").trim();
   const labels = labelsCsv ? labelsCsv.split(",").filter(Boolean) : [];
 
+  // ---------------------------------------------------------------------------
+  // Text-parsing fallbacks — only used when the Ollama field is null/empty.
+  // Priority: DB structured data > text parsing > null
+  // ---------------------------------------------------------------------------
+  const price    = (item.price_thb    != null) ? item.price_thb    : parsePriceThb(postText);
+  const listType = (item.listing_type != null && item.listing_type !== "")
+    ? item.listing_type
+    : parseListingType(postText);
+  const propType = (item.property_type != null && item.property_type !== "")
+    ? item.property_type
+    : parsePropertyType(postText);
+  const beds     = (item.bedrooms  != null) ? item.bedrooms  : parseBedrooms(postText);
+  const baths    = (item.bathrooms != null) ? item.bathrooms : parseBathrooms(postText);
+  const sqm      = (item.size_sqm  != null) ? item.size_sqm  : parseSizeSqm(postText);
+  const zone     = (item.phuket_zone != null && item.phuket_zone !== "")
+    ? item.phuket_zone
+    : detectZone(item.district as string | null, item.location as string | null);
+
   return {
-    post_id: item.post_id,
-    post_url: item.post_url ?? null,
-    author_name: item.author_name ?? null,
-    author_profile_url: item.author_profile_url ?? null,
-    post_text: postText || null,
-    created_at: item.created_at ?? null,
-    scraped_at: item.scraped_at ?? null,
-    comment_count: item.comment_count ?? null,
-    like_count: item.like_count ?? null,
-    is_hot: item.is_hot ?? null,
-    is_direct_owner: item.is_direct_owner ?? null,
-    is_agent: item.is_agent ?? null,
+    post_id:             item.post_id,
+    post_url:            item.post_url ?? null,
+    author_name:         authorName,
+    author_profile_url:  item.author_profile_url ?? null,
+    post_text:           postText || null,
+    created_at:          item.created_at ?? null,
+    scraped_at:          item.scraped_at ?? null,
+    comment_count:       item.comment_count ?? null,
+    like_count:          item.like_count ?? null,
+    is_hot:              item.is_hot ?? null,
+    is_direct_owner:     item.is_direct_owner ?? null,
+    is_agent:            item.is_agent ?? null,
+    is_discarded:        item.is_discarded ?? false,
     classification_label: item.classification_label ?? null,
-    listing_type: item.listing_type ?? null,
-    price_thb: item.price_thb ?? null,
-    price_thb_min: item.price_thb_min ?? null,
-    price_thb_max: item.price_thb_max ?? null,
-    property_type: item.property_type ?? null,
-    bedrooms: item.bedrooms ?? null,
-    bathrooms: item.bathrooms ?? null,
-    size_sqm: item.size_sqm ?? null,
-    location: item.location ?? null,
-    district: item.district ?? null,
-    phuket_zone: item.phuket_zone ?? null,           // null unless Ollama-extracted
-    furnished: item.furnished ?? null,
-    has_pool: item.has_pool ?? null,
-    has_sea_view: item.has_sea_view ?? null,         // null unless Ollama-extracted
-    has_mountain_view: item.has_mountain_view ?? null,
-    has_gym: item.has_gym ?? null,
-    has_security: item.has_security ?? null,
-    has_parking: item.has_parking ?? null,
-    has_garden: item.has_garden ?? null,
-    screenshot_path: item.screenshot_path ?? null,
-    // AI structured fields — null for non-extracted posts
-    opportunity_score: item.opportunity_score ?? null,
-    confidence: item.confidence ?? null,
-    decision_summary: (item.decision_summary as string | null) ?? decisionSummary,
-    urgency_signals: urgencySignals,
-    key_features: Array.isArray(item.key_features) ? item.key_features : [],
-    // User-applied labels (comma-separated from DB GROUP_CONCAT)
+    listing_type:        listType,
+    price_thb:           price,
+    price_thb_min:       item.price_thb_min ?? null,
+    price_thb_max:       item.price_thb_max ?? null,
+    price_unit:          item.price_unit ?? null,
+    property_type:       propType,
+    bedrooms:            beds,
+    bathrooms:           baths,
+    size_sqm:            sqm,
+    location:            item.location ? decodeHtml(String(item.location)) : null,
+    district:            item.district ? decodeHtml(String(item.district)) : null,
+    phuket_zone:         zone,
+    furnished:           item.furnished ?? null,
+    has_pool:            item.has_pool ?? null,
+    has_sea_view:        item.has_sea_view ?? null,
+    has_mountain_view:   item.has_mountain_view ?? null,
+    has_gym:             item.has_gym ?? null,
+    has_security:        item.has_security ?? null,
+    has_parking:         item.has_parking ?? null,
+    has_garden:          item.has_garden ?? null,
+    screenshot_path:     item.screenshot_path ?? null,
+    // Ollama-extracted intelligence fields
+    opportunity_score:   item.opportunity_score ?? null,
+    confidence:          item.confidence ?? null,
+    decision_summary:    realSummary,          // null when Ollama not run
+    urgency_signals:     urgencySignals,
+    key_features:        keyFeatures,
+    // User labels
     labels,
-    is_discarded: item.is_discarded ?? false,
   };
 }
 
 // ---------------------------------------------------------------------------
-// TASK-01 FIX: GET /api/listings
-// ---------------------------------------------------------------------------
-// Previously proxied to /structured/listings (Ollama-only → 0 results when
-// extraction is incomplete). Now uses /api/posts?filter=all, which LEFT-JOINs
-// fb_post_structured_data — all 390+ posts are visible immediately.
-//
-// Filtering strategy:
-//   listing_type, scraped_date  → FastAPI query params (native)
-//   property_type, district,    → client-side in Express (fields come from JOIN)
-//   poster_type, min/max_price
-//   phuket_zone                 → silently ignored here (not in /api/posts SELECT);
-//                                  add via /structured/listings overlay in a later
-//                                  task once Ollama extraction coverage is sufficient.
+// GET /api/listings
+// Proxies to FastAPI /api/posts (all posts via LEFT JOIN).
+// Applies text-parsing fallbacks in normalizePost(), then client-side filters.
 // ---------------------------------------------------------------------------
 router.get("/listings", async (req, res): Promise<void> => {
   try {
@@ -162,9 +287,8 @@ router.get("/listings", async (req, res): Promise<void> => {
 
     const data = await fetchFastAPI("/api/posts", {
       filter: "all",
-      listing_type: q.listing_type || undefined,
       scraped_date: q.scraped_date || undefined,
-      limit: 200,
+      limit: 300,
       offset: q.offset ? Number(q.offset) : 0,
     }) as { items?: unknown[] } | unknown[];
 
@@ -174,11 +298,20 @@ router.get("/listings", async (req, res): Promise<void> => {
 
     let items = raw.map(normalizePost);
 
-    // Client-side filters — only applied when param is present & non-empty.
+    // Client-side filters — applied after text-parsing so parsed values are available
+    if (q.listing_type) {
+      items = items.filter(item => item.listing_type === q.listing_type);
+    }
     if (q.property_type) {
       const pt = q.property_type.toLowerCase();
       items = items.filter(item =>
         (item.property_type as string | null)?.toLowerCase() === pt,
+      );
+    }
+    if (q.phuket_zone) {
+      const zone = q.phuket_zone.toLowerCase();
+      items = items.filter(item =>
+        (item.phuket_zone as string | null)?.toLowerCase() === zone,
       );
     }
     if (q.district) {
@@ -211,6 +344,8 @@ router.get("/listings", async (req, res): Promise<void> => {
 
 // ---------------------------------------------------------------------------
 // GET /api/leads/direct-owners → /api/posts?filter=owner_confirmed
+// Filters zone/property_type client-side (after text parsing) since those
+// fields are Ollama-extracted and often null in the DB.
 // ---------------------------------------------------------------------------
 router.get("/leads/direct-owners", async (req, res): Promise<void> => {
   try {
@@ -220,18 +355,31 @@ router.get("/leads/direct-owners", async (req, res): Promise<void> => {
       limit: 200,
       offset: 0,
     };
-    if (q.phuket_zone) params.phuket_zone = q.phuket_zone;
-    if (q.listing_type) params.listing_type = q.listing_type;
-    if (q.district) params.district = q.district;
     if (q.scraped_date) params.scraped_date = q.scraped_date;
 
     const data = await fetchFastAPI("/api/posts", params) as { items?: unknown[] } | unknown[];
 
-    const items: Record<string, unknown>[] = Array.isArray(data)
+    const raw: Record<string, unknown>[] = Array.isArray(data)
       ? (data as Record<string, unknown>[])
       : ((data as { items?: unknown[] })?.items ?? []) as Record<string, unknown>[];
 
-    res.json(items.map(normalizePost));
+    let items = raw.map(normalizePost);
+
+    // Client-side filters (after text-parsing fallbacks are applied)
+    if (q.phuket_zone) {
+      const zone = q.phuket_zone.toLowerCase();
+      items = items.filter(item =>
+        (item.phuket_zone as string | null)?.toLowerCase() === zone,
+      );
+    }
+    if (q.property_type) {
+      const pt = q.property_type.toLowerCase();
+      items = items.filter(item =>
+        (item.property_type as string | null)?.toLowerCase() === pt,
+      );
+    }
+
+    res.json(items);
   } catch (err) {
     req.log.warn({ err }, "FastAPI error for /leads/direct-owners");
     res.json([]);
@@ -239,23 +387,25 @@ router.get("/leads/direct-owners", async (req, res): Promise<void> => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/leads/buyers → /api/posts?listing_type=unknown
+// GET /api/leads/buyers → buyer request posts
+// Uses listing_type=unknown heuristic since buyers don't post prices.
 // ---------------------------------------------------------------------------
 router.get("/leads/buyers", async (req, res): Promise<void> => {
   try {
     const q = req.query as Record<string, string>;
     const data = await fetchFastAPI("/api/posts", {
+      filter: "all",
       listing_type: "unknown",
       limit: 200,
       offset: 0,
       scraped_date: q.scraped_date || undefined,
     }) as { items?: unknown[] } | unknown[];
 
-    const items: Record<string, unknown>[] = Array.isArray(data)
+    const raw: Record<string, unknown>[] = Array.isArray(data)
       ? (data as Record<string, unknown>[])
       : ((data as { items?: unknown[] })?.items ?? []) as Record<string, unknown>[];
 
-    res.json(items.map(normalizePost));
+    res.json(raw.map(normalizePost));
   } catch (err) {
     req.log.warn({ err }, "FastAPI error for /leads/buyers");
     res.json([]);

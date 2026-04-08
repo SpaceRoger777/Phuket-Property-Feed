@@ -33,11 +33,14 @@ import {
   BedDouble,
   Bath,
   Maximize2,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
-// Per-card action state — optimistic updates
+// Per-card action state — optimistic updates with error rollback
 // ---------------------------------------------------------------------------
 type CardState = { labels: Set<PostLabel>; discarded: boolean };
 
@@ -117,6 +120,32 @@ function ActionBtn({
 }
 
 // ---------------------------------------------------------------------------
+// Expandable post text
+// ---------------------------------------------------------------------------
+function PostText({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const preview = text.slice(0, 180);
+  const needsExpand = text.length > 180;
+
+  return (
+    <div className="px-4 pb-2 text-[11px] text-muted-foreground/80 leading-relaxed">
+      <p className="whitespace-pre-wrap break-words">
+        {expanded ? text : preview}
+        {needsExpand && !expanded && "…"}
+      </p>
+      {needsExpand && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 flex items-center gap-0.5 text-primary/60 hover:text-primary transition-colors text-[10px] font-medium"
+        >
+          {expanded ? <><ChevronUp className="w-3 h-3"/>Show less</> : <><ChevronDown className="w-3 h-3"/>Read full post</>}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ListingCard
 // ---------------------------------------------------------------------------
 function ListingCard({ listing, isDemand = false }: { listing: Listing; isDemand?: boolean }) {
@@ -127,20 +156,29 @@ function ListingCard({ listing, isDemand = false }: { listing: Listing; isDemand
   const loc     = listing.district || listing.phuket_zone || listing.location;
   const isOwner = listing.is_direct_owner || (listing.classification_label ?? "").toUpperCase().includes("OWNER");
   const date    = listing.scraped_at || listing.created_at;
+  const isFavorited = state.labels.has("favorite");
+  const isHotLead   = state.labels.has("hot_lead");
 
   return (
     <div className={cn(
       "flex flex-col bg-card border border-border/60 rounded-xl overflow-hidden",
       "hover:border-border/80 transition-colors",
-      state.labels.has("hot_lead") && "border-amber-500/50 ring-1 ring-amber-500/20",
+      isHotLead  && "border-amber-500/50 ring-1 ring-amber-500/20",
+      isFavorited && !isHotLead && "border-yellow-500/40 ring-1 ring-yellow-500/10",
     )}>
 
       {/* Header: badges + link */}
       <div className="flex items-start justify-between gap-2 px-4 pt-3.5 pb-1">
         <div className="flex flex-wrap gap-1.5 min-w-0">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {listing.property_type || "Property"}
-          </span>
+          {listing.property_type ? (
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {listing.property_type}
+            </span>
+          ) : (
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/40">
+              Property
+            </span>
+          )}
           {listing.listing_type && (
             <span className={cn("inline-flex items-center px-1.5 rounded text-[10px] font-bold uppercase border", getListingTypeClass(listing.listing_type))}>
               {listing.listing_type === "for_sale" ? "Sale" : listing.listing_type === "for_rent" ? "Rent" : listing.listing_type}
@@ -157,17 +195,25 @@ function ListingCard({ listing, isDemand = false }: { listing: Listing; isDemand
             </span>
           )}
         </div>
-        {listing.post_url && (
-          <a href={listing.post_url} target="_blank" rel="noopener noreferrer"
-            className="shrink-0 p-0.5 text-muted-foreground/40 hover:text-primary transition-colors" title="Open post">
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        )}
+        <div className="flex items-center gap-1 shrink-0">
+          {isFavorited && <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />}
+          {listing.post_url && (
+            <a href={listing.post_url} target="_blank" rel="noopener noreferrer"
+              className="p-0.5 text-muted-foreground/40 hover:text-primary transition-colors" title="Open post">
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
+        </div>
       </div>
 
       {/* Price */}
       <div className="px-4 pb-2">
-        <p className="text-xl font-bold text-foreground leading-tight">{price}</p>
+        <p className={cn(
+          "text-xl font-bold leading-tight",
+          price === "Price TBD" ? "text-muted-foreground/50 text-base italic" : "text-foreground",
+        )}>
+          {price}
+        </p>
       </div>
 
       {/* Stats strip */}
@@ -176,8 +222,8 @@ function ListingCard({ listing, isDemand = false }: { listing: Listing; isDemand
           {listing.bedrooms  != null && <span className="flex items-center gap-1"><BedDouble className="w-3 h-3"/>{listing.bedrooms} bed</span>}
           {listing.bathrooms != null && <span className="flex items-center gap-1"><Bath      className="w-3 h-3"/>{listing.bathrooms} bath</span>}
           {listing.size_sqm  != null && <span className="flex items-center gap-1"><Maximize2 className="w-3 h-3"/>{listing.size_sqm.toLocaleString()} ㎡</span>}
-          {listing.has_pool     && <span className="text-cyan-400 font-medium">🏊</span>}
-          {listing.has_sea_view && <span className="text-sky-400  font-medium">🌊</span>}
+          {listing.has_pool     && <span className="text-cyan-400 font-medium">🏊 Pool</span>}
+          {listing.has_sea_view && <span className="text-sky-400  font-medium">🌊 Sea view</span>}
         </div>
       )}
 
@@ -199,12 +245,20 @@ function ListingCard({ listing, isDemand = false }: { listing: Listing; isDemand
         )}
       </div>
 
-      {/* AI decision summary */}
+      {/* AI decision summary — only shown when Ollama extracted it */}
       {listing.decision_summary && (
-        <p className="px-4 pb-2 text-[11px] text-muted-foreground/70 italic line-clamp-2 leading-relaxed">
-          {listing.decision_summary}
-        </p>
+        <div className="mx-4 mb-2 px-2 py-1.5 rounded-md bg-primary/5 border border-primary/15">
+          <div className="flex items-center gap-1 text-[9px] text-primary/60 font-semibold uppercase tracking-wider mb-1">
+            <Sparkles className="w-2.5 h-2.5" /> AI Summary
+          </div>
+          <p className="text-[11px] text-foreground/80 italic leading-relaxed line-clamp-3">
+            {listing.decision_summary}
+          </p>
+        </div>
       )}
+
+      {/* Full post text — expandable */}
+      {listing.post_text && <PostText text={listing.post_text} />}
 
       {/* Urgency signals */}
       {listing.urgency_signals && listing.urgency_signals.length > 0 && (
@@ -224,10 +278,35 @@ function ListingCard({ listing, isDemand = false }: { listing: Listing; isDemand
         </div>
         {!isDemand && (
           <div className="flex items-center">
-            <ActionBtn icon={<Star     className="w-3.5 h-3.5"/>} active={state.labels.has("favorite")}  activeClass="text-yellow-400" title="Favorite"  onClick={() => toggleLabel("favorite")}/>
-            <ActionBtn icon={<Phone    className="w-3.5 h-3.5"/>} active={state.labels.has("contacted")} activeClass="text-green-400"  title="Contacted" onClick={() => toggleLabel("contacted")}/>
-            <ActionBtn icon={<Bookmark className="w-3.5 h-3.5"/>} active={state.labels.has("hot_lead")}  activeClass="text-amber-400" title="Hot lead"  onClick={() => toggleLabel("hot_lead")}/>
-            <ActionBtn icon={<Trash2   className="w-3.5 h-3.5"/>} active={false} activeClass="text-red-400" title="Discard" onClick={handleDiscard} danger/>
+            <ActionBtn
+              icon={<Star     className={cn("w-3.5 h-3.5", isFavorited && "fill-yellow-400")}/>}
+              active={isFavorited}
+              activeClass="text-yellow-400 bg-yellow-400/10"
+              title="Favorite — pin this listing"
+              onClick={() => toggleLabel("favorite")}
+            />
+            <ActionBtn
+              icon={<Phone    className="w-3.5 h-3.5"/>}
+              active={state.labels.has("contacted")}
+              activeClass="text-green-400 bg-green-400/10"
+              title="Mark as contacted"
+              onClick={() => toggleLabel("contacted")}
+            />
+            <ActionBtn
+              icon={<Bookmark className="w-3.5 h-3.5"/>}
+              active={isHotLead}
+              activeClass="text-amber-400 bg-amber-400/10"
+              title="Mark as hot lead"
+              onClick={() => toggleLabel("hot_lead")}
+            />
+            <ActionBtn
+              icon={<Trash2   className="w-3.5 h-3.5"/>}
+              active={false}
+              activeClass="text-red-400"
+              title="Discard this listing"
+              onClick={handleDiscard}
+              danger
+            />
           </div>
         )}
       </div>
@@ -236,11 +315,27 @@ function ListingCard({ listing, isDemand = false }: { listing: Listing; isDemand
 }
 
 // ---------------------------------------------------------------------------
+// Sort helpers — show hot_lead and favorite at the top
+// ---------------------------------------------------------------------------
+function sortByPriority(listings: Listing[]): Listing[] {
+  return [...listings].sort((a, b) => {
+    const scoreA =
+      (a.labels?.includes("hot_lead")  ? 2 : 0) +
+      (a.labels?.includes("favorite")  ? 1 : 0);
+    const scoreB =
+      (b.labels?.includes("hot_lead")  ? 2 : 0) +
+      (b.labels?.includes("favorite")  ? 1 : 0);
+    return scoreB - scoreA;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // HotLeads page — receives scraped_date from Dashboard date picker
 // ---------------------------------------------------------------------------
 export function HotLeads({ scraped_date }: { scraped_date?: string }) {
   const [phuketZone,   setPhuketZone]   = useState("all");
   const [propertyType, setPropertyType] = useState("all");
+  const [showFavOnly,  setShowFavOnly]  = useState(false);
 
   const qp = {
     ...(phuketZone   !== "all" ? { phuket_zone:   phuketZone   } : {}),
@@ -248,12 +343,19 @@ export function HotLeads({ scraped_date }: { scraped_date?: string }) {
     ...(scraped_date            ? { scraped_date }               : {}),
   };
 
-  const { data: directOwners, isLoading: loadOwners } = useGetDirectOwners(qp, {
+  const { data: rawOwners,  isLoading: loadOwners  } = useGetDirectOwners(qp, {
     query: { queryKey: getGetDirectOwnersQueryKey(qp) },
   });
   const { data: buyerRequests, isLoading: loadBuyers } = useGetBuyerRequests(qp, {
     query: { queryKey: getGetBuyerRequestsQueryKey(qp) },
   });
+
+  // Sort: hot_lead → favorite → rest
+  const directOwners = sortByPriority(
+    showFavOnly
+      ? (rawOwners ?? []).filter((l) => l.labels?.includes("favorite") || l.labels?.includes("hot_lead"))
+      : (rawOwners ?? []),
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -285,6 +387,24 @@ export function HotLeads({ scraped_date }: { scraped_date?: string }) {
             </SelectContent>
           </Select>
         </div>
+
+        {/* Favorites toggle */}
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Show</Label>
+          <button
+            onClick={() => setShowFavOnly((v) => !v)}
+            className={cn(
+              "flex items-center gap-1.5 h-8 px-3 rounded-md border text-sm font-medium transition-colors",
+              showFavOnly
+                ? "bg-yellow-400/15 border-yellow-500/40 text-yellow-400"
+                : "bg-transparent border-border text-muted-foreground hover:text-foreground hover:border-border/80",
+            )}
+          >
+            <Star className={cn("w-3.5 h-3.5", showFavOnly && "fill-yellow-400")}/>
+            {showFavOnly ? "Favorites only" : "All listings"}
+          </button>
+        </div>
+
         {scraped_date && (
           <div className="ml-auto text-xs text-muted-foreground/70 border border-border/50 rounded px-2.5 py-1">
             Showing: <span className="text-foreground font-medium">{scraped_date}</span>
@@ -300,13 +420,15 @@ export function HotLeads({ scraped_date }: { scraped_date?: string }) {
             <h2 className="text-sm font-bold flex items-center gap-2 uppercase tracking-wider text-muted-foreground">
               <span className="w-2 h-2 rounded-full bg-primary"/>Direct Owner Listings
             </h2>
-            <Badge variant="outline" className="font-mono text-xs">{directOwners?.length ?? 0}</Badge>
+            <Badge variant="outline" className="font-mono text-xs">{directOwners.length}</Badge>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
             {loadOwners
               ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-52 rounded-xl"/>)
-              : !directOwners?.length
-              ? <p className="col-span-full p-8 text-center text-sm text-muted-foreground border border-dashed rounded-xl">No direct owner listings found.</p>
+              : !directOwners.length
+              ? <p className="col-span-full p-8 text-center text-sm text-muted-foreground border border-dashed rounded-xl">
+                  {showFavOnly ? "No favorites yet — star a listing to pin it here." : "No direct owner listings found."}
+                </p>
               : directOwners.map((l) => <ListingCard key={l.post_id} listing={l}/>)}
           </div>
         </section>
